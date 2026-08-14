@@ -6,13 +6,25 @@
 
 ## 실행
 
+Node.js LTS만 있으면 됩니다(https://nodejs.org).
+
+**가장 쉬운 방법** — Windows는 `start.bat` 더블클릭, macOS·Linux는 `./start.sh`.
+패키지 설치부터 브라우저 열기까지 알아서 합니다.
+
+**명령으로 실행할 때:**
+
 ```bash
-npm install
-npm run dev      # 프론트 개발 서버 (http://localhost:5173)
-npm run dev:api  # 백엔드 개발 서버 (http://localhost:8787)
+npm install      # 처음 한 번. shared 빌드까지 자동으로 끝난다
+npm run dev      # 게임 (http://localhost:5173)
+npm run dev:api  # 백엔드 (http://localhost:8787) — 없어도 게임은 돌아간다
 npm run build    # shared + backend + frontend 빌드
 npm test         # 서버 검증 로직 테스트
 ```
+
+`frontend`는 `shared`의 **빌드 결과물**(`shared/dist`)을 참조합니다. 그래서
+`npm install`의 postinstall과 `npm run dev`가 매번 `shared`를 먼저 빌드합니다.
+`shared/src`를 고쳤다면 dev 서버를 다시 띄우거나 `npm run build -w shared`를
+실행해야 반영됩니다.
 
 백엔드 없이도 게임은 돌아갑니다. 서버가 없으면 기록이 브라우저에만 남고
 순위에는 반영되지 않는다고 화면에 표시됩니다.
