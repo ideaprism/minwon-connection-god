@@ -4,6 +4,9 @@
 민원 내용을 읽고 담당 부서로 3분 안에 최대한 많이 연결하며, 플레이 과정에서
 기관의 사업과 타 부서 업무를 자연스럽게 익히는 것을 목적으로 합니다.
 
+**배포:** https://minwon-connection-god2.vercel.app — `main`에 push하면 자동으로
+갱신됩니다. 빌드 명령과 출력 경로는 `vercel.json`에 있습니다.
+
 ## 실행
 
 Node.js LTS만 있으면 됩니다(https://nodejs.org).
