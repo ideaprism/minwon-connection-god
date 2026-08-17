@@ -1,6 +1,14 @@
 node_modules/
+
+# 빌드 산출물
 dist/
-.vercel/
-.env
-.env.local
 *.tsbuildinfo
+.vercel/
+
+# 다른 PC에서 히스토리를 옮겨 올 때 쓰는 운반용 파일. 저장소에 넣지 않는다.
+git-history.bundle
+
+# 비밀값. .env.example 만 커밋한다.
+.env
+.env.*
+!.env.example
