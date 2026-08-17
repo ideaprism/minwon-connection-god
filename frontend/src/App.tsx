@@ -1,6 +1,13 @@
-import { useEffect, useState } from 'react';
-import { ALL_COMPLAINTS, DEPARTMENT_BY_ID, HOSTILE, ROUND_DURATION_SEC } from '@minwon/shared';
-import { useGame, HOTKEY_ORDER, type GameSnapshot } from './game/useGame';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import {
+  ALL_COMPLAINTS,
+  DEPARTMENT_BY_ID,
+  HOSTILE,
+  ROUND_DURATION_SEC,
+  type Department,
+} from '@minwon/shared';
+import { BAND_GROUPS, INLINE_GROUPS, type DeptGroup } from './game/deptGroups';
+import { useGame, PRACTICE_QUESTIONS, type GameSnapshot } from './game/useGame';
 import { loadRecords, saveRecord, type Record } from './leaderboard';
 import * as api from './api';
 
@@ -39,6 +46,14 @@ export default function App() {
     game.start();
   };
 
+  // 체험은 서버 라운드를 발급받지 않는다. ticket이 없으므로 제출 이펙트도
+  // 돌지 않고, 1인 3회 제한도 소모되지 않는다.
+  const handlePractice = () => {
+    setSubmitted(null);
+    setTicket(null);
+    game.startPractice();
+  };
+
   // 라운드가 끝나면 입력 로그를 보낸다. 점수는 서버가 다시 계산한다.
   useEffect(() => {
     if (g.status !== 'over' || !ticket || submitted) return;
@@ -62,15 +77,21 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [g.status, game]);
 
+  // 플레이 중에는 화면을 뷰포트에 딱 맞춘다. 부서 버튼 14개와 찬스 패널이
+  // 스크롤 없이 한눈에 들어와야 하기 때문이다. 시작·결과 화면은 내용이
+  // 길어질 수 있으므로 평소대로 늘어나게 둔다.
+  const live = g.status === 'playing' || g.status === 'paused';
+
   return (
     <div
-      className={`min-h-dvh flex flex-col bg-navy-deep text-white font-sans
+      className={`flex flex-col bg-navy-deep text-white font-sans
+        ${live ? 'h-dvh overflow-hidden' : 'min-h-dvh'}
         ${g.hostile && g.status === 'playing' ? 'animate-red-flash' : ''}
         ${g.stunned ? 'animate-shake' : ''}`}
     >
       <Header g={g} onPause={game.pause} onQuit={game.quit} />
 
-      <main className="flex-1 flex flex-col relative">
+      <main className="flex-1 min-h-0 flex flex-col relative">
         {g.status === 'idle' && (
           <StartScreen
             records={records}
@@ -78,6 +99,7 @@ export default function App() {
             session={session}
             onRegister={setSession}
             onStart={handleStart}
+            onPractice={handlePractice}
           />
         )}
         {(g.status === 'playing' || g.status === 'paused') && (
@@ -101,16 +123,19 @@ export default function App() {
               maxCombo: g.result?.maxCombo ?? 0,
               at: Date.now(),
             }))}
-            onRetry={handleStart}
+            onRetry={g.practice ? handlePractice : handleStart}
+            onStartReal={handleStart}
             onHome={game.reset}
           />
         )}
         {g.status === 'paused' && <PauseOverlay onResume={game.resume} onQuit={game.quit} />}
         {g.cutIn && <CutInOverlay kind={g.cutIn} />}
-        {g.stunned && g.status === 'playing' && !g.cutIn && <StunOverlay />}
+        {/* 체험 중에는 버퍼링 오버레이를 띄우지 않는다. 해설을 읽으라고 준
+            시간인데 화면을 가려 버리면 배울 수가 없다. */}
+        {g.stunned && g.status === 'playing' && !g.cutIn && !g.practice && <StunOverlay />}
       </main>
 
-      <footer className="bg-navy border-t-4 border-black py-3 text-center text-[11px] text-white/45">
+      <footer className="bg-navy border-t-4 border-black py-1.5 text-center text-[11px] text-white/45">
         © 2026 한국특허정보원(KIPI) 임직원 한마음 e스포츠 대회 | 민원 연결의 神 (KIPI COMPLAINT MASTER)
       </footer>
     </div>
@@ -127,7 +152,7 @@ function Header({ g, onPause, onQuit }: { g: GameSnapshot; onPause: () => void; 
   return (
     <header className="bg-navy border-b-4 border-black px-4 py-3 flex flex-wrap items-center gap-3">
       <h1 className="font-title text-2xl text-arcade-yellow text-stroke flex items-center gap-2">
-        ⚡ 민원 연결의 神
+        ⚡ 민원 연결의 <span className="text-god">神</span>
       </h1>
       <span className="bg-warn text-white text-[10px] font-title px-2 py-1 rounded border-2 border-white">
         ARCADE EDITION
@@ -160,21 +185,34 @@ function Header({ g, onPause, onQuit }: { g: GameSnapshot; onPause: () => void; 
               </span>
             )}
           </div>
-          <div className="chip flex items-center gap-2 w-48">
-            <span className="text-xs">⏱</span>
-            <div className="flex-1 h-3 rounded-full bg-black/60 border-2 border-black overflow-hidden">
-              <div
-                className={`h-full ${bar} transition-[width] duration-200`}
-                style={{ width: `${Math.max(0, ratio) * 100}%` }}
-                role="progressbar"
-                aria-valuenow={Math.ceil(g.remainingMs / 1000)}
-                aria-valuemin={0}
-                aria-valuemax={ROUND_DURATION_SEC}
-                aria-label="남은 시간"
-              />
+          {g.practice ? (
+            // 체험 모드는 시계가 돌지 않는다. 대신 몇 문항째인지 보여 준다.
+            <div className="chip flex items-center gap-2 border-arcade-cyan">
+              <span className="font-title text-sm text-arcade-cyan">🎓 체험 모드</span>
+              <span className="font-english text-sm">
+                {Math.min(g.answered + 1, PRACTICE_QUESTIONS)} / {PRACTICE_QUESTIONS}
+              </span>
+              <span className="text-[11px] text-white/50">시간 제한 없음</span>
             </div>
-            <span className="font-title text-xs w-9 text-right">{Math.ceil(g.remainingMs / 1000)}s</span>
-          </div>
+          ) : (
+            <div className="chip flex items-center gap-2 w-48">
+              <span className="text-xs">⏱</span>
+              <div className="flex-1 h-3 rounded-full bg-black/60 border-2 border-black overflow-hidden">
+                <div
+                  className={`h-full ${bar} transition-[width] duration-200`}
+                  style={{ width: `${Math.max(0, ratio) * 100}%` }}
+                  role="progressbar"
+                  aria-valuenow={Math.ceil(g.remainingMs / 1000)}
+                  aria-valuemin={0}
+                  aria-valuemax={ROUND_DURATION_SEC}
+                  aria-label="남은 시간"
+                />
+              </div>
+              <span className="font-title text-xs w-9 text-right">
+                {Math.ceil(g.remainingMs / 1000)}s
+              </span>
+            </div>
+          )}
           <button onClick={onPause} className="btn-arcade-yellow px-3 py-2 text-xs">
             ⏸ 일시정지
           </button>
@@ -195,12 +233,14 @@ function StartScreen({
   session,
   onRegister,
   onStart,
+  onPractice,
 }: {
   records: Record[];
   online: boolean;
   session: api.Session | null;
   onRegister: (s: api.Session) => void;
   onStart: () => void;
+  onPractice: () => void;
 }) {
   return (
     <div className="flex-1 flex flex-col lg:flex-row items-center justify-center gap-6 p-6">
@@ -208,14 +248,13 @@ function StartScreen({
         <h2 className="font-title text-2xl text-arcade-yellow text-stroke-sm border-b-2 border-dashed border-white/20 pb-3 mb-4">
           🎮 게임 가이드
         </h2>
-        <ol className="space-y-3 text-sm text-white/85">
+        <ol className="space-y-3 text-[15px] leading-relaxed text-white/90 break-keep">
           <Rule n="1" tone="text-arcade-yellow">
-            <b>업무 매칭</b> — 줄 서 있는 민원인의 말을 읽고, 그 일을 처리하는 부서를 고르세요.
+            <b>업무 매칭</b> — 줄 서 있는 민원인과 그 일을 처리하는 부서를 연결해주세요.
             제한시간 {ROUND_DURATION_SEC}초.
           </Rule>
           <Rule n="2" tone="text-arcade-cyan">
-            <b>조작</b> — 마우스 클릭 또는 키보드 <b>{HOTKEY_ORDER.slice(0, 4).join(' · ')} …</b> 로 초고속 입력.
-            <b> Esc</b>로 일시정지.
+            <b>조작</b> — 마우스 클릭.<b> Esc</b>로 일시정지.
           </Rule>
           <Rule n="3" tone="text-warn">
             <b>오답 페널티</b> — 감점은 없지만 상담사가 <b>버퍼링</b> 상태에 빠져 잠시 멈춥니다.
@@ -234,12 +273,26 @@ function StartScreen({
           <RegisterForm onRegister={onRegister} />
         ) : (
           <>
-            <button onClick={onStart} className="btn-arcade-green mt-6 w-full py-4 text-2xl">
-              ▶ 게임 시작 (START)
-            </button>
+            <div className="mt-6 flex gap-3">
+              <button onClick={onStart} className="btn-arcade-green flex-1 py-4 text-2xl">
+                ▶ 게임 시작 (START)
+              </button>
+              {/* 본 게임은 시작과 동시에 시계가 돌아 화면을 볼 틈이 없다.
+                  체험은 시계 없이 {PRACTICE_QUESTIONS}문항만 돌려 보는 통로다. */}
+              <button
+                onClick={onPractice}
+                className="btn-arcade btn-arcade-white px-6 py-4 text-lg font-title whitespace-nowrap"
+              >
+                🎓 체험하기
+                <span className="block text-[11px] font-sans opacity-60">
+                  {PRACTICE_QUESTIONS}문항 · 기록 없음
+                </span>
+              </button>
+            </div>
             {online && session && (
               <p className="mt-3 text-center text-xs text-white/50">
                 {session.displayName} 님 · 기록 {session.played}/{session.maxRounds}회
+                <span className="text-white/35"> · 체험은 횟수에 포함되지 않습니다</span>
               </p>
             )}
           </>
@@ -361,9 +414,18 @@ interface GameProps {
 
 function GameScreen({ g, onAnswer, onExec, onChief, onCalm }: GameProps) {
   return (
-    <div className="flex-1 flex flex-col lg:flex-row">
+    // 버튼 폭은 글자에 맞춰 좁게 잡는다. 부서명이 가장 긴 것도 열 글자라
+    // 넓은 버튼은 빈 여백만 늘리고 눈이 훑는 거리를 길게 만든다.
+    //
+    // 넓은 화면일수록 더 좁힌다. 비율을 하나로 고정하면, 무대(1920)에 맞춰
+    // 좁혔을 때 노트북(1280)에서 블럭 하나짜리 그룹의 부서명이 잘린다.
+    <div
+      className="flex-1 min-h-0 flex flex-col
+        lg:grid lg:grid-cols-[minmax(0,57fr)_minmax(0,43fr)]
+        2xl:grid-cols-[minmax(0,64fr)_minmax(0,36fr)]"
+    >
       {/* 왼쪽 — 민원 접수 데스크 */}
-      <div className="flex-1 p-4 lg:p-6 lg:border-r-4 border-black flex flex-col">
+      <div className="min-w-0 min-h-0 overflow-y-auto no-scrollbar p-4 lg:p-5 lg:border-r-4 border-black flex flex-col">
         {/* 보드와 말풍선은 한 덩어리로 붙어 있어야 꼬리가 민원인을 가리킨다 */}
         <div className="my-auto w-full flex flex-col gap-4">
           <OfficeBoard g={g} />
@@ -373,7 +435,7 @@ function GameScreen({ g, onAnswer, onExec, onChief, onCalm }: GameProps) {
       </div>
 
       {/* 오른쪽 — 부서 매칭 컨트롤러 */}
-      <div className="w-full lg:w-[520px] p-4 lg:p-6 flex flex-col gap-4 bg-navy/60">
+      <div className="min-w-0 min-h-0 w-full p-4 lg:p-5 flex flex-col gap-3 bg-navy/60">
         <div className="flex items-center justify-between">
           <h3 className="font-title text-lg text-arcade-yellow text-stroke-sm">부서 매칭 컨트롤러</h3>
           <span className="text-[10px] text-white/40 border border-white/20 rounded px-2 py-1">
@@ -384,32 +446,11 @@ function GameScreen({ g, onAnswer, onExec, onChief, onCalm }: GameProps) {
         {g.hostile ? (
           <HostilePanel g={g} onExec={onExec} onCalm={onCalm} />
         ) : (
-          <div className="grid grid-cols-2 gap-3">
-            {g.choices.map((dept, i) => (
-              <button
-                key={dept.id}
-                onClick={() => onAnswer(dept.id)}
-                disabled={g.stunned}
-                className="btn-arcade bg-white text-black p-3 text-left flex flex-col gap-1"
-              >
-                <span className="flex items-center justify-between gap-2">
-                  <span className="text-[10px] text-office-blue font-bold truncate">{dept.unitShort}</span>
-                  <kbd className="bg-black text-arcade-yellow rounded px-1.5 text-[11px] font-title shrink-0">
-                    {HOTKEY_ORDER[i]}
-                  </kbd>
-                </span>
-                <span className="font-title text-sm leading-tight">{dept.short}</span>
-                {/* 선택지가 많은 페이즈에서는 설명을 빼야 카드가 뭉개지지 않는다 */}
-                {g.choices.length <= 8 && dept.desc && (
-                  <span className="text-[10px] text-black/55 leading-tight line-clamp-2">{dept.desc}</span>
-                )}
-              </button>
-            ))}
-          </div>
+          <DeptController stunned={g.stunned} onAnswer={onAnswer} />
         )}
 
-        <div className="mt-auto panel bg-navy-deep p-4">
-          <h4 className="font-title text-xs mb-3">🚨 비상 대책반 찬스</h4>
+        <div className="mt-auto panel bg-navy-deep p-3">
+          <h4 className="font-title text-xs mb-2">🚨 비상 대책반 찬스</h4>
           <div className="grid grid-cols-2 gap-3">
             <button
               onClick={onChief}
@@ -441,10 +482,118 @@ function GameScreen({ g, onAnswer, onExec, onChief, onCalm }: GameProps) {
   );
 }
 
+/**
+ * 부서 매칭 컨트롤러 — 14개 버튼을 상위 조직별로 묶어 늘 같은 자리에 둔다.
+ *
+ * 그룹마다 한 줄씩 주면 버튼이 7줄이 되어 1280×720에서 찬스 패널이 밀려난다.
+ * 블럭 3개 이상인 조직만 자기 밴드를 갖고, 1~2개짜리는 마지막 한 줄에 나란히
+ * 세워 버튼 행을 5줄로 유지한다.
+ */
+function DeptController({
+  stunned,
+  onAnswer,
+}: {
+  stunned: boolean;
+  onAnswer: (id: string) => void;
+}) {
+  return (
+    <div className="flex-1 min-h-0 flex flex-col gap-2">
+      {BAND_GROUPS.map((group) => (
+        <GroupBand
+          key={group.parent}
+          className="min-h-0"
+          // 남는 높이는 줄 수에 비례해 나눈다. 균등하게 주면 3줄짜리 밴드의
+          // 버튼이 1줄짜리 밴드의 3분의 1 높이로 찌그러진다.
+          // basis를 auto로 두어야 머리글·여백 같은 고정 높이가 먼저 확보된다.
+          style={{ flex: `${Math.ceil(group.depts.length / 3)} 1 auto` }}
+          group={group}
+        >
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 flex-1 min-h-0 auto-rows-fr">
+            {group.depts.map((d) => (
+              <DeptButton key={d.id} dept={d} stunned={stunned} onAnswer={onAnswer} />
+            ))}
+          </div>
+        </GroupBand>
+      ))}
+
+      {/* 작은 조직들은 한 줄에 나란히. 폭은 블럭 수에 비례해 나눠 갖는다. */}
+      <div className="flex gap-2 min-h-0" style={{ flex: '1 1 auto' }}>
+        {INLINE_GROUPS.map((group) => (
+          <GroupBand
+            key={group.parent}
+            className="min-w-0 min-h-0"
+            style={{ flex: `${group.depts.length} 1 0%` }}
+            group={group}
+          >
+            <div
+              className="grid gap-2 flex-1 min-h-0 auto-rows-fr"
+              style={{ gridTemplateColumns: `repeat(${group.depts.length}, minmax(0, 1fr))` }}
+            >
+              {group.depts.map((d) => (
+                <DeptButton key={d.id} dept={d} stunned={stunned} onAnswer={onAnswer} />
+              ))}
+            </div>
+          </GroupBand>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GroupBand({
+  group,
+  className = '',
+  style,
+  children,
+}: {
+  group: DeptGroup;
+  className?: string;
+  style?: CSSProperties;
+  children: ReactNode;
+}) {
+  return (
+    <section
+      className={`flex flex-col gap-1.5 rounded-xl border-2 border-white/15 bg-black/15 p-2 ${className}`}
+      style={style}
+      aria-label={group.parent}
+    >
+      <h4 className="dept-unit text-[11px] text-arcade-cyan/85 leading-none truncate">
+        {group.parent}
+      </h4>
+      {children}
+    </section>
+  );
+}
+
+function DeptButton({
+  dept,
+  stunned,
+  onAnswer,
+}: {
+  dept: Department;
+  stunned: boolean;
+  onAnswer: (id: string) => void;
+}) {
+  return (
+    <button
+      onClick={() => onAnswer(dept.id)}
+      disabled={stunned}
+      className="btn-arcade bg-white text-black px-2 py-2 text-left flex flex-col justify-center gap-0.5 rounded-lg min-h-0"
+    >
+      {/* 배지는 좁은 화면에서 한 단계 줄인다. 'IP시스템기반실'이 가장 길어
+          여기서 먼저 잘리는데, 잘린 실 이름은 배지 노릇을 못 한다. */}
+      <span className="dept-unit text-[10px] 2xl:text-xs text-office-blue truncate w-full">
+        {dept.unitShort}
+      </span>
+      <span className="dept-name text-base 2xl:text-lg break-keep">{dept.short}</span>
+    </button>
+  );
+}
+
 /** 민원인이 줄을 서서 상담사에게 밀려오는 보드. 압박감의 원천이다. */
 function OfficeBoard({ g }: { g: GameSnapshot }) {
   return (
-    <div className="panel bg-navy-deep p-4 flex items-center gap-3 min-h-[132px]">
+    <div className="panel bg-navy-deep p-3 flex items-center gap-3 min-h-[112px]">
       <div className="flex items-center gap-2 flex-1 overflow-hidden no-scrollbar">
         {[...g.queue].reverse().map((q) => (
           <div
@@ -463,7 +612,7 @@ function OfficeBoard({ g }: { g: GameSnapshot }) {
       {/* 현재 응대 중인 민원인 */}
       <div className="flex flex-col items-center shrink-0">
         <div
-          className={`w-20 h-20 rounded-full border-4 border-black grid place-items-center text-5xl shadow-cartoon
+          className={`w-16 h-16 rounded-full border-4 border-black grid place-items-center text-4xl shadow-cartoon
             ${g.blowingAway ? 'animate-kick-blow bg-warn' : ''}
             ${g.hostile ? 'bg-warn/30 border-warn animate-evil-pulse' : 'bg-white/90'}`}
         >
@@ -482,7 +631,7 @@ function OfficeBoard({ g }: { g: GameSnapshot }) {
       {/* 담당 상담사 */}
       <div className="flex flex-col items-center shrink-0">
         <div
-          className={`w-20 h-20 rounded-full border-4 border-black grid place-items-center text-5xl shadow-cartoon
+          className={`w-16 h-16 rounded-full border-4 border-black grid place-items-center text-4xl shadow-cartoon
             ${g.stunned ? 'bg-warn/30' : 'bg-arcade-cyan/25'}`}
         >
           {g.stunned ? '🥴' : '👩‍💼'}
@@ -500,7 +649,7 @@ function SpeechBubble({ g }: { g: GameSnapshot }) {
   return (
     <div className="relative">
       <div
-        className={`bubble-tail relative w-full border-4 rounded-3xl p-6 shadow-cartoon
+        className={`bubble-tail relative w-full border-4 rounded-3xl p-5 shadow-cartoon
           ${g.hostile ? 'border-warn bg-warn/15' : 'border-black bg-white'}`}
         style={{ ['--bubble-bg' as string]: g.hostile ? '#3a0d0f' : '#fff' }}
       >
@@ -510,18 +659,24 @@ function SpeechBubble({ g }: { g: GameSnapshot }) {
           <DifficultyBadge level={g.complaint.difficulty} />
         )}
         <p
-          className={`font-bold leading-snug break-keep min-h-[4.5rem]
-            ${g.complaint.text.length > 60 ? 'text-lg sm:text-xl' : 'text-2xl sm:text-3xl'}
+          // 무대 화면(1920)에서는 크게, 노트북(1280)에서는 한 화면에 들어오게.
+          className={`font-bold leading-snug break-keep min-h-[3.5rem] 2xl:min-h-[5rem]
+            ${g.complaint.text.length > 60 ? 'text-lg 2xl:text-xl' : 'text-xl 2xl:text-3xl'}
             ${g.hostile ? 'text-warn' : 'text-black'}`}
         >
           “{g.complaint.text}”
         </p>
-        <div className="mt-4 h-2 rounded-full bg-black/15 border-2 border-black/30 overflow-hidden">
-          <div
-            className={`h-full ${g.hostile ? 'bg-warn' : 'bg-office-blue'}`}
-            style={{ width: `${g.questionProgress * 100}%` }}
-          />
-        </div>
+        {g.practice ? (
+          // 체험은 제한시간이 없으므로 꽉 찬 막대를 띄우면 거짓말이 된다.
+          <p className="mt-4 text-xs text-black/45">🎓 체험 모드 — 천천히 둘러보세요</p>
+        ) : (
+          <div className="mt-4 h-2 rounded-full bg-black/15 border-2 border-black/30 overflow-hidden">
+            <div
+              className={`h-full ${g.hostile ? 'bg-warn' : 'bg-office-blue'}`}
+              style={{ width: `${g.questionProgress * 100}%` }}
+            />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -556,9 +711,9 @@ function FeedbackCard({ g }: { g: GameSnapshot }) {
       <p className="text-xs text-white/55 font-title">
         {f.kind === 'timeout' ? '놓쳤습니다' : '오답'} — 정답은
       </p>
-      <p className="font-title text-lg text-success text-stroke-sm">{f.correctDept}</p>
-      {f.correctUnit && <p className="text-[11px] text-arcade-cyan">{f.correctUnit}</p>}
-      <p className="text-sm text-white/80 mt-1 break-keep">{f.explanation}</p>
+      <p className="dept-name text-xl text-success">{f.correctDept}</p>
+      {f.correctUnit && <p className="dept-unit text-xs text-arcade-cyan">{f.correctUnit}</p>}
+      <p className="text-sm text-white/85 mt-1.5 leading-relaxed break-keep">{f.explanation}</p>
     </div>
   );
 }
@@ -683,6 +838,7 @@ function ResultScreen({
   pendingSubmit,
   onSave,
   onRetry,
+  onStartReal,
   onHome,
 }: {
   g: GameSnapshot;
@@ -690,6 +846,7 @@ function ResultScreen({
   pendingSubmit: boolean;
   onSave: (name: string) => void;
   onRetry: () => void;
+  onStartReal: () => void;
   onHome: () => void;
 }) {
   const r = g.result;
@@ -712,8 +869,16 @@ function ResultScreen({
   return (
     <div className="flex-1 grid place-items-center p-6">
       <div className="panel p-8 w-full max-w-2xl text-center">
-        <div className="text-6xl">🏁</div>
-        <h2 className="font-title text-3xl text-arcade-yellow text-stroke mt-2">업무 종료!</h2>
+        <div className="text-6xl">{g.practice ? '🎓' : '🏁'}</div>
+        <h2 className="font-title text-3xl text-arcade-yellow text-stroke mt-2">
+          {g.practice ? '체험 완료!' : '업무 종료!'}
+        </h2>
+        {g.practice && (
+          <p className="mt-2 text-sm text-white/60">
+            {PRACTICE_QUESTIONS}문항을 둘러봤습니다. 본 게임은 {ROUND_DURATION_SEC}초 동안
+            문항당 7초로 진행됩니다.
+          </p>
+        )}
 
         <p className="font-title text-6xl text-arcade-yellow text-stroke mt-6">
           {r.score.toLocaleString()}
@@ -726,7 +891,10 @@ function ResultScreen({
           <Stat label="악성 퇴치" value={`${r.hostileCleared}건`} />
         </dl>
 
-        {pendingSubmit || submitted ? (
+        {g.practice ? (
+          // 체험 점수는 어디에도 남기지 않는다. 이름 입력도 띄우지 않는다.
+          <p className="mt-6 text-sm text-white/50">체험 점수는 기록되지 않습니다.</p>
+        ) : pendingSubmit || submitted ? (
           <div className="mt-6">
             {submitted ? (
               <>
@@ -804,9 +972,20 @@ function ResultScreen({
         )}
 
         <div className="mt-8 flex gap-3">
-          <button onClick={onRetry} className="btn-arcade-green flex-1 py-4 text-lg">
-            다시 도전
-          </button>
+          {g.practice ? (
+            <>
+              <button onClick={onStartReal} className="btn-arcade-green flex-1 py-4 text-lg">
+                ▶ 게임 시작
+              </button>
+              <button onClick={onRetry} className="btn-arcade btn-arcade-white px-6 py-4 font-title">
+                다시 체험
+              </button>
+            </>
+          ) : (
+            <button onClick={onRetry} className="btn-arcade-green flex-1 py-4 text-lg">
+              다시 도전
+            </button>
+          )}
           <button onClick={onHome} className="btn-arcade-blue px-6 py-4">
             메인으로
           </button>

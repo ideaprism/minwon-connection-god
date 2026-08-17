@@ -1,5 +1,10 @@
 /* 원본 아케이드 버전의 폰트 구성. 전부 OFL-1.1이며 npm에서 번들하므로
-   외부 요청이 없다 — 아티팩트 배포와 오프라인 구동 모두 안전하다. */
+   외부 요청이 없다 — 아티팩트 배포와 오프라인 구동 모두 안전하다.
+
+   Pretendard가 본문 폰트다. tailwind.config.js의 font-sans가 이 폰트를
+   가리키는데 예전에는 import가 빠져 있어서, 실제로는 system-ui(윈도우에서는
+   맑은 고딕)로 떨어져 본문이 흐릿하게 보였다. */
+@import 'pretendard/dist/web/static/pretendard.css';
 @import '@fontsource/black-han-sans/korean.css';
 @import '@fontsource/black-han-sans/latin.css';
 @import '@fontsource/outfit/latin-400.css';
@@ -11,7 +16,15 @@
 
 @layer base {
   html { color-scheme: dark; }
-  body { margin: 0; background: theme('colors.navy.deep'); }
+  body {
+    margin: 0;
+    background: theme('colors.navy.deep');
+    /* 어두운 배경 위 밝은 글자는 굵어 보인다. 안티에일리어싱을 낮춰야
+       획이 뭉치지 않고 한글 받침이 살아난다. */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.01em;
+  }
   .break-keep { word-break: keep-all; }
 }
 
@@ -50,6 +63,29 @@
 /* ── 제목 외곽선 ───────────────────────────────────────────────── */
 .text-stroke    { -webkit-text-stroke: 1.5px #000; }
 .text-stroke-sm { -webkit-text-stroke: .8px #000; }
+
+/* '神'은 획이 촘촘해서 검은 외곽선을 두르면 글자 속이 전부 메워져 까맣게
+   보인다. 외곽선 대신 그림자로 띄우고 색을 따로 준다. */
+.text-god {
+  -webkit-text-stroke: 0;
+  color: theme('colors.arcade.cyan');
+  text-shadow: 0 2px 0 #000, 2px 0 0 #000, 0 -2px 0 #000, -2px 0 0 #000, 3px 3px 0 rgba(0, 0, 0, .5);
+}
+
+/* ── 부서 버튼 ─────────────────────────────────────────────────────
+   14개를 한 화면에 늘 띄우므로, 부서명은 본문 폰트의 굵은 자족으로 쓴다.
+   디스플레이체(Black Han Sans)는 작은 크기에서 획이 뭉쳐 못 읽는다. */
+.dept-name {
+  font-family: theme('fontFamily.sans');
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+}
+.dept-unit {
+  font-family: theme('fontFamily.sans');
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
 
 /* ── 말풍선 꼬리 ───────────────────────────────────────────────── */
 .bubble-tail::before,
