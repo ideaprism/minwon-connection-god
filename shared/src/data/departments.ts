@@ -3,7 +3,7 @@ import type { Department } from '../rules.js';
 /**
  * 정답 분류 — www.kipi.or.kr 주요사업 기준.
  *
- * docs/문제은행_v4.xlsx 에서 생성됩니다. 직접 고치지 마세요.
+ * docs/문제은행_v5.xlsx 에서 생성됩니다. 직접 고치지 마세요.
  */
 export const DEPARTMENTS: Department[] = [
   { id: 'data-center', name: '데이터관리센터', short: '데이터관리',
@@ -14,8 +14,10 @@ export const DEPARTMENTS: Department[] = [
     unit: '지능정보화센터 · 지능정보데이터실', unitShort: '지능정보데이터실', desc: '서면서류 스캐닝·전자화, 온라인 제출서류 명세서 전자화, 상…' },
   { id: 'kpa', name: '한국특허영문초록(KPA)', short: '영문초록 KPA',
     unit: '정보활용본부 · IP정보가공실', unitShort: 'IP정보가공실', desc: '한국특허공보 영문요약서 제작(등록 1979' },
-  { id: 'translation', name: '특허정보 번역서비스', short: '번역서비스',
-    unit: '정보활용본부 · IP정보확산실', unitShort: 'IP정보확산실', desc: '한영 기계번역 K2E-PAT(시스트란 공동개발, 맞춤형 대량…' },
+  { id: 'pct-translation', name: 'PCT 국제출원문서 번역', short: 'PCT 번역',
+    unit: '정보활용본부 · IP정보가공실', unitShort: 'IP정보가공실', desc: 'PCT 규칙 제48조3에 따라 WIPO에 제출된 한국어 국제…' },
+  { id: 'k2e-pat', name: '한영 기계번역(K2E-PAT)', short: 'K2E-PAT',
+    unit: '지능정보화센터 · 지능정보기술실', unitShort: '지능정보기술실', desc: '시스트란 인터내셔널과 공동 개발한 한영 기계번역 엔진' },
   { id: 'ipic', name: 'IP정보통합센터', short: 'IP정보통합',
     unit: '정보시스템본부 · IP시스템기반실', unitShort: 'IP시스템기반실', desc: '민간 클라우드 기반 IP정보시스템 통합 운영(2026' },
   { id: 'kipris-plus', name: '특허정보활용서비스(KIPRISPlus)', short: 'KIPRISPlus',
@@ -31,7 +33,7 @@ export const DEPARTMENTS: Department[] = [
   { id: 'global', name: '지식재산 정보화 국제협력', short: '국제협력',
     unit: '정보활용본부 · IP정보확산실', unitShort: 'IP정보확산실', desc: '대상국 IP 정보화 컨설팅(현황조사·목표모델·경제적 효과)…' },
   { id: 'tech-transfer', name: '지식재산 기술지원', short: '기술지원',
-    unit: '지능정보화센터 · 지능정보전략실', unitShort: '지능정보전략실', desc: '보유 기술·지식재산권·연구논문·학습데이터의 기술이전(공고→신…' },
+    unit: '경영관리본부 · 전략기획실', unitShort: '전략기획실', desc: '보유 기술·지식재산권·연구논문·학습데이터의 기술이전(공고→신…' },
 ];
 
 export const DEPARTMENT_BY_ID = new Map(DEPARTMENTS.map((d) => [d.id, d]));

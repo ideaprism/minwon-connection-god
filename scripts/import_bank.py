@@ -21,19 +21,28 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 ROOT = Path(__file__).resolve().parent.parent
-XLSX = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'docs' / '문제은행_v4.xlsx'
+XLSX = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / 'docs' / '문제은행_v5.xlsx'
 DATA = ROOT / 'shared' / 'src' / 'data'
 
 MAX_TEXT, MAX_EXPL = 40, 45
 
 # 정답 분류 → (게임 내부 ID, 버튼에 쓸 짧은 이름)
+#
+# 노출 여부는 엑셀의 분류체계 시트가 정한다. 여기 남아 있어도 '제외'면 쓰이지
+# 않는다. 지금 안 쓰는 항목을 지우지 않는 것은, 분류가 다시 노출로 바뀌었을 때
+# 게임 내부 ID가 달라지면 과거 기록의 부서별 통계가 끊기기 때문이다.
 IDS = {
     '데이터관리센터': ('data-center', '데이터관리'),
     '특허정보검색서비스(KIPRIS)': ('kipris', 'KIPRIS 검색'),
     '특허문서전자화센터': ('digitization', '문서 전자화'),
     '한국특허영문초록(KPA)': ('kpa', '영문초록 KPA'),
-    '특허정보 번역서비스': ('translation', '번역서비스'),
-    '지식재산 통계서비스': ('statistics', '지식재산 통계'),
+    # v4의 '특허정보 번역서비스' 하나가 v5에서 둘로 갈라졌다. 사업 페이지의
+    # 담당부서(국제협력팀)와 실제 수행부서가 다른 사례가 v4에서 이미 나왔던
+    # 지점이라, 엑셀 쪽에서 수행 주체 기준으로 분리한 것이다.
+    'PCT 국제출원문서 번역': ('pct-translation', 'PCT 번역'),
+    '한영 기계번역(K2E-PAT)': ('k2e-pat', 'K2E-PAT'),
+    '특허정보 번역서비스': ('translation', '번역서비스'),  # v5에서 위 둘로 대체
+    '지식재산 통계서비스': ('statistics', '지식재산 통계'),  # v5 기준 제외(존속 확인 중)
     'IP정보통합센터': ('ipic', 'IP정보통합'),
     '특허정보활용서비스(KIPRISPlus)': ('kipris-plus', 'KIPRISPlus'),
     '국제특허정보박람회(PATINEX)': ('patinex', 'PATINEX'),
