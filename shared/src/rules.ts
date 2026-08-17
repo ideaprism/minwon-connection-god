@@ -57,8 +57,6 @@ export interface PhaseRule {
   phase: Phase;
   /** 이 페이즈가 시작되는 시각(초). */
   startSec: number;
-  /** 화면에 띄울 부서 버튼 수. */
-  choices: number;
   /** 문항당 제한시간(ms). */
   limitMs: number;
   /** 악성 민원인 등장 확률. */
@@ -69,14 +67,20 @@ export interface PhaseRule {
 
 export const ROUND_DURATION_SEC = 77;
 
+/** 문항당 제한시간. 페이즈와 콤보에 관계없이 항상 이 값이다. */
+export const QUESTION_LIMIT_MS = 7000;
+
 /**
  * 페이즈 경계는 라운드 길이의 1/3 지점으로 잡는다.
  * 초 단위로 박아두면 라운드 길이를 바꿀 때마다 난이도 곡선이 어긋난다.
+ *
+ * 제한시간은 세 페이즈가 모두 같다. 부서 버튼도 항상 전부 띄우므로,
+ * 페이즈가 만드는 차이는 악성 민원 등장 확률과 출제 난이도뿐이다.
  */
 export const PHASES: PhaseRule[] = [
-  { phase: 1, startSec: 0, choices: 6, limitMs: 8000, hostileRate: 0 },
-  { phase: 2, startSec: ROUND_DURATION_SEC / 3, choices: 8, limitMs: 6000, hostileRate: 0.06 },
-  { phase: 3, startSec: (ROUND_DURATION_SEC * 2) / 3, choices: 12, limitMs: 4500, hostileRate: 0.12 },
+  { phase: 1, startSec: 0, limitMs: QUESTION_LIMIT_MS, hostileRate: 0 },
+  { phase: 2, startSec: ROUND_DURATION_SEC / 3, limitMs: QUESTION_LIMIT_MS, hostileRate: 0.06 },
+  { phase: 3, startSec: (ROUND_DURATION_SEC * 2) / 3, limitMs: QUESTION_LIMIT_MS, hostileRate: 0.12 },
 ];
 
 /**
@@ -110,10 +114,6 @@ export const COMBO_TIERS: ReadonlyArray<{ min: number; multiplier: number }> = [
   { min: 5, multiplier: 1.2 },
   { min: 0, multiplier: 1.0 },
 ];
-
-/** 콤보가 이 값 이상이면 제한시간이 10% 줄어든다(상위권 변별용). */
-export const COMBO_PRESSURE_THRESHOLD = 20;
-export const COMBO_PRESSURE_FACTOR = 0.9;
 
 export const HOSTILE = {
   /** 악성 민원 중에는 시간이 이 배율로 소모된다. */
@@ -151,10 +151,12 @@ export function speedBonus(elapsedMs: number): number {
   return Math.max(0, Math.round(SCORE.speedMax * (1 - elapsedMs / SCORE.speedCutoffMs)));
 }
 
-/** 현재 페이즈와 콤보를 반영한 문항 제한시간. */
-export function limitMsFor(elapsedSec: number, combo: number): number {
-  const base = phaseAt(elapsedSec).limitMs;
-  return combo >= COMBO_PRESSURE_THRESHOLD ? Math.round(base * COMBO_PRESSURE_FACTOR) : base;
+/**
+ * 문항 제한시간. 지금은 모든 페이즈가 같은 값이라 상수와 다름없지만,
+ * 페이즈별로 다시 갈라질 수 있으므로 호출부는 이 함수를 거친다.
+ */
+export function limitMsFor(elapsedSec: number): number {
+  return phaseAt(elapsedSec).limitMs;
 }
 
 export interface RoundResult {
@@ -250,6 +252,9 @@ export const CHIEF_CLEARED = '__chief__';
 /**
  * 문항의 선택지를 구성한다. 정답 1개 + 오답 n-1개.
  * distractors가 있으면 먼저 채워 "헷갈리는 부서"가 실제로 함께 나오게 한다.
+ *
+ * 지금 화면은 부서를 항상 전부 같은 자리에 띄우므로 이 함수를 쓰지 않는다.
+ * 선택지를 다시 추려 내는 방식으로 돌아갈 때를 위해 남겨 둔다.
  */
 export function buildChoices(
   complaint: Complaint,

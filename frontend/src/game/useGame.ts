@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ALL_COMPLAINTS,
-  buildChoices,
   buildRoundPlan,
   CHIEF_CLEARED,
   comboMultiplier,
@@ -26,6 +25,19 @@ import {
 } from '@minwon/shared';
 
 const TICK_MS = 50;
+/**
+ * 체험 모드에서 풀어 보는 문항 수.
+ *
+ * 본 게임은 시작하자마자 77초가 흐르기 때문에 화면을 둘러볼 틈이 없다.
+ * 체험 모드는 라운드 시계와 문항 제한시간을 모두 끄고 세 문항만 돌린다.
+ * 기록은 남지 않으며 서버에도 보내지 않는다.
+ */
+export const PRACTICE_QUESTIONS = 3;
+/**
+ * 체험 모드에서 오답 해설을 띄워 두는 시간.
+ * 본 게임의 스턴(0.7초)은 해설을 읽기엔 짧다. 배우러 온 화면이므로 길게 준다.
+ */
+const PRACTICE_FEEDBACK_MS = 2600;
 /** 컷인 재생 시간. 이 동안 라운드 시간이 멈추고 입력이 잠긴다. */
 const CUT_IN_MS: Record<CutIn, number> = { chief: 1200, exec: 1500, taekwondo: 1800 };
 
@@ -73,6 +85,10 @@ export interface GameSnapshot {
   calmProgress: number;
   result: RoundResult | null;
   lastGain: { value: number; key: number } | null;
+  /** 체험 모드인지. 시계가 돌지 않고 기록도 남지 않는다. */
+  practice: boolean;
+  /** 지금까지 처리한 문항 수. 체험 모드의 진행 표시에 쓴다. */
+  answered: number;
 }
 
 interface Mutable {
@@ -99,6 +115,10 @@ interface Mutable {
   feedback: Feedback | null;
   /** 스턴이 끝난 뒤에 다음 문항으로 넘어가기 위한 대기 표시. */
   pendingAdvance: boolean;
+  /** 체험 모드 — 시계를 멈추고 세 문항만 돌린다. */
+  practice: boolean;
+  /** 마지막 체험 문항의 해설을 다 보여 준 뒤 끝내기 위한 대기 표시. */
+  pendingFinish: boolean;
   result: RoundResult | null;
   lastGain: { value: number; key: number } | null;
   pausedAt: number;
@@ -131,6 +151,8 @@ function initial(): Mutable {
     blowingAway: false,
     feedback: null,
     pendingAdvance: false,
+    practice: false,
+    pendingFinish: false,
     result: null,
     lastGain: null,
     pausedAt: 0,
@@ -158,14 +180,19 @@ export function useGame() {
       return advance();
     }
     const complaint = ALL_COMPLAINTS.get(entry.complaintId) ?? COMPLAINTS[0];
-    const rule = phaseAt(elapsedSec());
     s.complaint = complaint;
     s.hostile = entry.hostile;
-    s.choices = entry.hostile
-      ? []
-      : buildChoices(complaint, DEPARTMENTS, Math.min(rule.choices, DEPARTMENTS.length), s.rand);
+    // 부서 버튼은 문항마다 섞지 않는다. 항상 DEPARTMENTS 순서 그대로 전부 띄워
+    // 같은 부서가 늘 같은 자리에 있게 한다 — 위치를 외워서 빨라지는 게임이다.
+    s.choices = entry.hostile ? [] : DEPARTMENTS;
     s.shownAt = performance.now();
-    s.limitMs = entry.hostile ? HOSTILE.maxMs : limitMsFor(elapsedSec(), s.combo);
+    // 체험 모드는 제한시간을 두지 않는다. 화면을 둘러보라고 만든 모드인데
+    // 7초가 흐르면 본 게임과 다를 게 없다.
+    s.limitMs = s.practice
+      ? Number.POSITIVE_INFINITY
+      : entry.hostile
+        ? HOSTILE.maxMs
+        : limitMsFor(elapsedSec());
     s.calmTaps = 0;
   }, [elapsedSec]);
 
@@ -212,7 +239,7 @@ export function useGame() {
           correctUnit: DEPARTMENT_BY_ID.get(s.complaint.correctDept)?.unit,
           explanation: s.complaint.explanation,
         };
-        s.stunUntil = performance.now() + SCORE.stunMs;
+        s.stunUntil = performance.now() + (s.practice ? PRACTICE_FEEDBACK_MS : SCORE.stunMs);
       } else if (chosenDept === s.complaint.correctDept) {
         gain = Math.round(SCORE.base * comboMultiplier(s.combo)) + speedBonus(elapsedMs);
         s.combo += 1;
@@ -225,24 +252,33 @@ export function useGame() {
           correctUnit: DEPARTMENT_BY_ID.get(s.complaint.correctDept)?.unit,
           explanation: s.complaint.explanation,
         };
-        s.stunUntil = performance.now() + SCORE.stunMs;
+        s.stunUntil = performance.now() + (s.practice ? PRACTICE_FEEDBACK_MS : SCORE.stunMs);
       }
 
       s.score = Math.max(0, s.score + gain);
       s.lastGain = { value: gain, key: s.logs.length };
       s.index += 1;
 
+      // 체험 모드는 정해진 문항 수를 채우면 끝난다. 바로 끝내지 않고 대기로
+      // 두는 것은, 마지막 문항을 틀렸을 때 해설을 읽을 시간을 주기 위해서다.
+      const held = performance.now() < Math.max(s.stunUntil, s.cutInUntil);
+      if (s.practice && s.logs.length >= PRACTICE_QUESTIONS) {
+        if (held) s.pendingFinish = true;
+        else finish();
+        return;
+      }
+
       // 스턴이 걸렸다면 방금 처리한 민원을 화면에 남겨둔다. 해설이 어느 민원에
       // 대한 것인지 분명해야 하고, 다음 문항의 제한시간이 스턴 동안 흘러가
       // 이중으로 손해 보는 것도 막아야 한다.
-      if (performance.now() < Math.max(s.stunUntil, s.cutInUntil)) {
+      if (held) {
         s.pendingAdvance = true;
       } else {
         advance();
       }
       rerender();
     },
-    [advance, rerender]
+    [advance, finish, rerender]
   );
 
   const answer = useCallback(
@@ -316,6 +352,25 @@ export function useGame() {
     [advance, rerender]
   );
 
+  /**
+   * 체험 모드 — 시계 없이 세 문항만 돌린다.
+   *
+   * 서버에서 시드를 받지 않는다. 라운드를 발급받으면 1인 3회 제한을 갉아먹고
+   * 제출 기록도 남기 때문이다. 체험 결과는 어디에도 기록되지 않는다.
+   * 출제 계획 앞쪽은 악성 민원 확률이 0이라 체험에는 일반 민원만 나온다.
+   */
+  const startPractice = useCallback(() => {
+    const seed = Math.floor(Math.random() * 2 ** 31);
+    m.current = initial();
+    const s = m.current;
+    s.status = 'playing';
+    s.practice = true;
+    s.plan = buildRoundPlan(seed);
+    s.rand = seededRandom(seed ^ 0x5f3759df);
+    advance();
+    rerender();
+  }, [advance, rerender]);
+
   const pause = useCallback(() => {
     const s = m.current;
     if (s.status !== 'playing') return;
@@ -360,12 +415,13 @@ export function useGame() {
       s.lastTick = now;
 
       // 컷인이 재생되는 동안에는 시간이 멈춘다. 연출 때문에 손해 보면 안 된다.
-      if (now >= s.cutInUntil) {
+      // 체험 모드는 라운드 시계 자체를 돌리지 않는다.
+      if (!s.practice && now >= s.cutInUntil) {
         // 악성 민원 중에는 시간이 빠르게 닳는다
         s.remainingMs -= dt * (s.hostile ? HOSTILE.drainRate : 1);
       }
 
-      if (s.remainingMs <= 0) {
+      if (!s.practice && s.remainingMs <= 0) {
         s.remainingMs = 0;
         finish();
         return;
@@ -377,6 +433,11 @@ export function useGame() {
         if (s.cutIn) {
           s.cutIn = null;
           s.blowingAway = false;
+        }
+        if (s.pendingFinish) {
+          s.pendingFinish = false;
+          finish();
+          return;
         }
         if (s.pendingAdvance) {
           s.pendingAdvance = false;
@@ -415,12 +476,6 @@ export function useGame() {
         chiefChance();
         return;
       }
-      const key = e.key.toUpperCase();
-      const idx = HOTKEY_ORDER.indexOf(key);
-      if (idx >= 0 && idx < s.choices.length) {
-        e.preventDefault();
-        answer(s.choices[idx].id);
-      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -458,9 +513,22 @@ export function useGame() {
     calmProgress: s.calmTaps / HOSTILE.calmTaps,
     result: s.result,
     lastGain: s.lastGain,
+    practice: s.practice,
+    answered: s.logs.length,
   };
 
-  return { snapshot, start, reset, pause, resume, quit, answer, execChance, chiefChance, calmTap, logs: s.logs };
+  return {
+    snapshot,
+    start,
+    startPractice,
+    reset,
+    pause,
+    resume,
+    quit,
+    answer,
+    execChance,
+    chiefChance,
+    calmTap,
+    logs: s.logs,
+  };
 }
-
-export const HOTKEY_ORDER = ['Q', 'W', 'E', 'R', 'A', 'S', 'D', 'F', 'Z', 'X', 'C', 'V'];
